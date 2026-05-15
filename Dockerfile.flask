@@ -1,0 +1,44 @@
+# =============================================================================
+# EX-DIGITAL — Flask Integration Gateway Dockerfile
+# =============================================================================
+# Lean production image for the Flask gateway service.
+# =============================================================================
+
+FROM python:3.12-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# ── Install system dependencies for psycopg2 ───────────────────────────────
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Install Python dependencies ────────────────────────────────────────────
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir gunicorn
+
+# ── Copy application code ──────────────────────────────────────────────────
+COPY database/ ./database/
+COPY integration_gateway/ ./integration_gateway/
+
+# ── Expose port ────────────────────────────────────────────────────────────
+EXPOSE 5001
+
+# ── Health check ───────────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')" || exit 1
+
+# ── Run with gunicorn (production WSGI server) ─────────────────────────────
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:5001", \
+     "--workers", "4", \
+     "--timeout", "120", \
+     "--access-logfile", "-", \
+     "integration_gateway.app:create_app()"]

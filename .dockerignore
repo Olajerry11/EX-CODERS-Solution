@@ -1,0 +1,40 @@
+# =============================================================================
+# EX-DIGITAL — Docker Ignore
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files (injected via docker-compose)
+.env
+
+# Docker
+docker-compose.yml
+Dockerfile.*
+
+# Docs & misc
+*.md
+LICENSE
+.gemini/

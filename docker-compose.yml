@@ -1,0 +1,101 @@
+# =============================================================================
+# EX-DIGITAL — Docker Compose (Full Stack)
+# =============================================================================
+# Spins up all three services on an isolated network:
+#   1. PostgreSQL 16  — persistent data store
+#   2. FastAPI Core   — authentication, sessions, rapid-scan
+#   3. Flask Gateway  — external data export & sync
+#
+# Usage:
+#   docker compose up --build        (foreground, with logs)
+#   docker compose up --build -d     (detached / background)
+#   docker compose down -v           (stop + remove volumes)
+# =============================================================================
+
+services:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 1. PostgreSQL Database
+  # ────────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: exdigital-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-exdigital}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-exdigital_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-exdigital_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-exdigital} -d ${POSTGRES_DB:-exdigital_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - exdigital-network
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 2. FastAPI Core API Engine
+  # ────────────────────────────────────────────────────────────────────────────
+  fastapi-core:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    container_name: exdigital-fastapi
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-exdigital}:${POSTGRES_PASSWORD:-exdigital_secret}@postgres:5432/${POSTGRES_DB:-exdigital_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-CHANGE_ME_TO_A_LONG_RANDOM_STRING}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+    ports:
+      - "${FASTAPI_PORT:-8000}:8000"
+    networks:
+      - exdigital-network
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # 3. Flask Integration Gateway
+  # ────────────────────────────────────────────────────────────────────────────
+  flask-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.flask
+    container_name: exdigital-flask
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fastapi-core:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-exdigital}:${POSTGRES_PASSWORD:-exdigital_secret}@postgres:5432/${POSTGRES_DB:-exdigital_db}
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-CHANGE_ME_FLASK_SECRET}
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-exdigital_gateway_secret_key}
+      EXTERNAL_PORTAL_BASE_URL: ${EXTERNAL_PORTAL_BASE_URL:-https://portal.university.edu/api/v1}
+      EXTERNAL_PORTAL_API_KEY: ${EXTERNAL_PORTAL_API_KEY:-your_external_api_key_here}
+      SYNC_BATCH_SIZE: ${SYNC_BATCH_SIZE:-100}
+      SYNC_MAX_RETRIES: ${SYNC_MAX_RETRIES:-5}
+    ports:
+      - "${FLASK_PORT:-5001}:5001"
+    networks:
+      - exdigital-network
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Volumes & Networks
+# ──────────────────────────────────────────────────────────────────────────────
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  exdigital-network:
+    driver: bridge
+    name: exdigital-network
